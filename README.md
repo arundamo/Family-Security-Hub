@@ -138,8 +138,8 @@ Main Firestore paths:
 
 The schema details live in:
 
-- `/tmp/workspace/arundamo/Family-Security-Hub/firebase-blueprint.json`
-- `/tmp/workspace/arundamo/Family-Security-Hub/src/types.ts`
+- `firebase-blueprint.json`
+- `src/types.ts`
 
 ## Security model
 
