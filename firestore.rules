@@ -1,0 +1,181 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net - Default Deny Everything
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Common ABAC Helpmates
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+    
+    function incoming() { 
+      return request.resource.data; 
+    }
+    
+    function existing() { 
+      return resource.data; 
+    }
+    
+    function isSignedIn() { 
+      return request.auth != null; 
+    }
+    
+    function isOwner(userId) { 
+      return isSignedIn() && request.auth.uid == userId; 
+    }
+
+    function isCircleMember(circleId) {
+      return isSignedIn() && exists(/databases/$(database)/documents/circles/$(circleId)/members/$(request.auth.uid));
+    }
+
+    // ----------------------------------------------------
+    // 1. Users Collection Definition
+    // ----------------------------------------------------
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId);
+      // Deny direct collections indexing
+      allow list: if false;
+
+      allow create: if isOwner(userId) && isValidId(userId) && isValidUser(incoming()) && incoming().updatedAt == request.time;
+      
+      allow update: if isOwner(userId) && isValidId(userId) && isValidUser(incoming()) && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'phoneNumber', 'latitude', 'longitude', 'updatedAt', 'activeCircleId', 'activeSOS', 'sosMessage'])
+      ) && incoming().updatedAt == request.time;
+
+      allow delete: if isOwner(userId);
+    }
+
+    function isValidUser(data) {
+      return data.displayName is string && data.displayName.size() <= 100
+         && data.email is string && data.email.size() <= 100
+         && (data.get('id', null) == null || (data.id is string && data.id.size() <= 128))
+         && (data.get('photoURL', null) == null || (data.photoURL is string && data.photoURL.size() <= 500))
+         && (data.get('phoneNumber', null) == null || (data.phoneNumber is string && data.phoneNumber.size() <= 30))
+         && (data.get('latitude', null) == null || data.latitude is number)
+         && (data.get('longitude', null) == null || data.longitude is number)
+         && (data.get('activeCircleId', null) == null || (data.activeCircleId is string && data.activeCircleId.size() <= 128))
+         && (data.get('activeSOS', null) == null || data.activeSOS is bool)
+         && (data.get('sosMessage', null) == null || (data.sosMessage is string && data.sosMessage.size() <= 500));
+    }
+
+    // ----------------------------------------------------
+    // 2. Circles Collection Definition
+    // ----------------------------------------------------
+    match /circles/{circleId} {
+      allow get: if isSignedIn() && isValidId(circleId);
+      // Enforce list queries: Any signed-in user must be able to query by invite code to join
+      allow list: if isSignedIn();
+
+      allow create: if isSignedIn() && isValidId(circleId) && isValidCircle(incoming()) && incoming().createdAt == request.time;
+      
+      allow update: if isCircleMember(circleId) && isValidId(circleId) && isValidCircle(incoming()) && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['name'])
+      );
+      
+      allow delete: if isSignedIn() && isValidId(circleId) && existing().createdById == request.auth.uid;
+
+      // 2a. Subcollection: Circle Members
+      match /members/{memberId} {
+        // Anyone signed in can read if they know the circle path AND belong/are joining
+        allow get: if isSignedIn() && isValidId(memberId) && (
+          isCircleMember(circleId) || isOwner(memberId)
+        );
+        allow list: if isSignedIn() && (
+          isCircleMember(circleId) || isOwner(memberId)
+        );
+        
+        allow create: if isSignedIn() && isValidId(memberId) && isOwner(memberId) && isValidCircleMember(incoming()) && incoming().joinedAt == request.time;
+        
+        allow update: if isCircleMember(circleId) && isValidId(memberId) && isValidCircleMember(incoming()) && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['role', 'displayName', 'photoURL'])
+        );
+        
+        allow delete: if isSignedIn() && isValidId(memberId) && (
+          isOwner(memberId) || isCircleAdmin(circleId)
+        );
+      }
+
+      // 2b. Subcollection: Chat Messages
+      match /chats/{chatId} {
+        allow get: if isCircleMember(circleId) && isValidId(chatId);
+        allow list: if isCircleMember(circleId);
+        
+        allow create: if isCircleMember(circleId) && isValidId(chatId) && incoming().senderId == request.auth.uid && isValidChatMessage(incoming()) && incoming().createdAt == request.time;
+        
+        allow delete: if isCircleMember(circleId) && isValidId(chatId) && (
+          existing().senderId == request.auth.uid || isCircleAdmin(circleId)
+        );
+      }
+
+      // 2c. Subcollection: Emergency SOS signals
+      match /sos/{sosId} {
+        allow get: if isCircleMember(circleId) && isValidId(sosId);
+        allow list: if isCircleMember(circleId);
+        
+        allow create: if isCircleMember(circleId) && isValidId(sosId) && incoming().userId == request.auth.uid && isValidSOS(incoming()) && incoming().createdAt == request.time;
+        
+        allow update: if isCircleMember(circleId) && isValidId(sosId) && (
+          isOwner(existing().userId) || isCircleAdmin(circleId)
+        ) && (
+          // Allow resolving or updating active stats
+          incoming().diff(existing()).affectedKeys().hasOnly(['active', 'resolvedAt', 'resolvedBy'])
+        );
+        
+        allow delete: if isCircleMember(circleId) && isValidId(sosId) && isCircleAdmin(circleId);
+      }
+
+      // 2d. Subcollection: SafeZones
+      match /safezones/{zoneId} {
+        allow get: if isCircleMember(circleId) && isValidId(zoneId);
+        allow list: if isCircleMember(circleId);
+        
+        allow create: if isCircleMember(circleId) && isValidId(zoneId) && incoming().createdById == request.auth.uid && isValidSafeZone(incoming()) && incoming().createdAt == request.time;
+        
+        allow delete: if isCircleMember(circleId) && isValidId(zoneId);
+      }
+    }
+
+    function isValidCircle(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() <= 100
+         && data.code is string && data.code.size() == 6
+         && data.createdById == request.auth.uid;
+    }
+
+    function isValidCircleMember(data) {
+      return data.userId is string && data.userId == request.auth.uid
+         && data.displayName is string && data.displayName.size() <= 100
+         && (data.role == 'member' || data.role == 'admin');
+    }
+
+    function isCircleAdmin(circleId) {
+      return exists(/databases/$(database)/documents/circles/$(circleId)/members/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/circles/$(circleId)/members/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isValidChatMessage(data) {
+      return data.senderId is string && data.senderId == request.auth.uid
+         && data.senderName is string && data.senderName.size() <= 100
+         && data.text is string && data.text.size() > 0 && data.text.size() <= 1000;
+    }
+
+    function isValidSOS(data) {
+      return data.userId is string && data.userId == request.auth.uid
+         && data.userName is string && data.userName.size() <= 100
+         && data.message is string && data.message.size() <= 500
+         && data.latitude is number
+         && data.longitude is number
+         && data.active is bool;
+    }
+
+    function isValidSafeZone(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() <= 100
+         && data.latitude is number && data.longitude is number
+         && data.radius is number && data.radius >= 10 && data.radius <= 10000
+         && data.createdById == request.auth.uid;
+    }
+  }
+}

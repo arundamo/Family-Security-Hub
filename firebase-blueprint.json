@@ -1,0 +1,116 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account information, status, and latest location.",
+      "type": "object",
+      "properties": {
+        "displayName": { "type": "string", "description": "The name of the user" },
+        "email": { "type": "string", "description": "The email of the user" },
+        "photoURL": { "type": "string", "description": "The avatar URL of the user" },
+        "phoneNumber": { "type": "string", "description": "The emergency phone number" },
+        "activeCircleId": { "type": "string", "description": "The currently selected active circle ID" },
+        "latitude": { "type": "number", "description": "The current latitude" },
+        "longitude": { "type": "number", "description": "The current longitude" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "The timestamp of the last update" },
+        "activeSOS": { "type": "boolean", "description": "Whether the user has currently actived an SOS state" },
+        "sosMessage": { "type": "string", "description": "An optional SOS message" }
+      },
+      "required": ["displayName", "email", "updatedAt"]
+    },
+    "Circle": {
+      "title": "Family Circle",
+      "description": "A group containing family members who share location and emergency alerts.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "The family circle name" },
+        "code": { "type": "string", "description": "The unique invitation code to join this circle" },
+        "createdById": { "type": "string", "description": "The user who created the circle" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp of circle creation" }
+      },
+      "required": ["name", "code", "createdById", "createdAt"]
+    },
+    "CircleMember": {
+      "title": "Circle Member",
+      "description": "The association of a user to a family circle.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The ID of the user" },
+        "displayName": { "type": "string", "description": "The user's display name" },
+        "photoURL": { "type": "string", "description": "The user's avatar URL" },
+        "role": { "type": "string", "enum": ["admin", "member"], "description": "User role within the circle" },
+        "joinedAt": { "type": "string", "format": "date-time", "description": "Timestamp of when the user joined" }
+      },
+      "required": ["userId", "displayName", "role", "joinedAt"]
+    },
+    "SOSAlert": {
+      "title": "SOS Alert",
+      "description": "An active or resolved emergency SOS message sent by a circle member.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The ID of the user in trouble" },
+        "userName": { "type": "string", "description": "The display name of the user in trouble" },
+        "message": { "type": "string", "description": "The emergency message" },
+        "latitude": { "type": "number", "description": "The latitude at time of alert" },
+        "longitude": { "type": "number", "description": "The longitude at time of alert" },
+        "active": { "type": "boolean", "description": "Whether the SOS is actively ongoing" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "The timestamp of when this alert was created" },
+        "resolvedAt": { "type": "string", "format": "date-time", "description": "The timestamp of when this alert was resolved" },
+        "resolvedBy": { "type": "string", "description": "The user who resolved this alert" }
+      },
+      "required": ["userId", "userName", "active", "createdAt"]
+    },
+    "ChatMessage": {
+      "title": "Chat Message",
+      "description": "A coordination message sent within the circle.",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string", "description": "The ID of the sender" },
+        "senderName": { "type": "string", "description": "The display name of the sender" },
+        "text": { "type": "string", "description": "The message test content" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp of sending" }
+      },
+      "required": ["senderId", "senderName", "text", "createdAt"]
+    },
+    "SafeZone": {
+      "title": "Safe Zone",
+      "description": "Geofenced safe boundaries (e.g., Home, Work, School).",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "The safe zone label" },
+        "latitude": { "type": "number", "description": "The center latitude of the safe zone" },
+        "longitude": { "type": "number", "description": "The center longitude of the safe zone" },
+        "radius": { "type": "number", "description": "The radius in meters" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp when defined" },
+        "createdById": { "type": "string", "description": "Creator user identifier" }
+      },
+      "required": ["name", "latitude", "longitude", "radius", "createdAt", "createdById"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles store settings, current location status, and active SOS flags."
+    },
+    "circles/{circleId}": {
+      "schema": { "$ref": "#/entities/Circle" },
+      "description": "Circles representing families or core groups."
+    },
+    "circles/{circleId}/members/{memberId}": {
+      "schema": { "$ref": "#/entities/CircleMember" },
+      "description": "Associates family members within each designated family circle."
+    },
+    "circles/{circleId}/sos/{sosId}": {
+      "schema": { "$ref": "#/entities/SOSAlert" },
+      "description": "List of emergency distress alerts associated with a circle."
+    },
+    "circles/{circleId}/chats/{chatId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Group chat and panic-sync text interface for circles."
+    },
+    "circles/{circleId}/safezones/{zoneId}": {
+      "schema": { "$ref": "#/entities/SafeZone" },
+      "description": "Saves boundaries of interests such as Home, School, or Office."
+    }
+  }
+}

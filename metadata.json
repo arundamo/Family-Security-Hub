@@ -1,0 +1,6 @@
+{
+  "name": "Howl",
+  "description": "A real-time pack safety and family protection platform. Connect with your pack, monitor live locations, set safe zones, and trigger a pack-wide Howl (SOS) when danger surrounds you.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
